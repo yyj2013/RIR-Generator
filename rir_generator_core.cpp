@@ -68,6 +68,7 @@ SOFTWARE.
 #include <stdlib.h>
 #include "math.h"
 #include "rir_generator_core.h"
+#include "pad.h"
 
 #define ROUND(x) ((x)>=0?(long)((x)+0.5):(long)((x)-0.5))
 
@@ -129,6 +130,24 @@ double sim_microphone(double x, double y, double z, double* microphone_angle, ch
     }
 }
 
+void conv_(const double *input, int len_in,double *kernel,int len_k, double *output)
+{
+    for (int i = 0; i < len_in + len_k - 1; i++)
+    {
+        double res = 0;
+        for (int j = 0, m = i; j < len_k ; j++, m--)
+        {   
+            if (m >= len_in)
+                continue;
+            if (m < 0)
+                break;
+            res += input[m] * kernel[j];
+        }
+        output[i] = res;
+    }
+}
+
+
 void computeRIR(double* imp, double c, double fs, double* rr, int nMicrophones, int nSamples, double* ss, double* LL, double* beta, char microphone_type, int nOrder, double* microphone_angle, int isHighPassFilter){
 
     // Temporary variables and constants (high-pass filter)
@@ -142,7 +161,8 @@ void computeRIR(double* imp, double c, double fs, double* rr, int nMicrophones, 
 
     // Temporary variables and constants (image-method)
     const double Fc = 0.5; // The normalized cut-off frequency equals (fs/2) / fs = 0.5
-    const int    Tw = 2 * ROUND(0.004*fs); // The width of the low-pass FIR equals 8 ms
+    // const int    Tw = 2 * ROUND(0.004*fs); // The width of the low-pass FIR equals 8 ms
+    #define      Tw  (int)(2 * ROUND(0.004*fs))
     const double cTs = c/fs;
     double*      LPI = new double[Tw];
     double       r[3];
@@ -153,12 +173,15 @@ void computeRIR(double* imp, double c, double fs, double* rr, int nMicrophones, 
     double       refl[3];
     double       fdist,dist;
     double       gain;
+    // double       conv_out[Tw+pad_rir_len];
     int          startPosition;
     int          n1, n2, n3;
     int          q, j, k;
     int          mx, my, mz;
     int          n;
-
+    int          angle;
+    int          index;
+    double *conv_out  = new double[Tw+pad_rir_len-1];//NEW((Tw+pad_rir_len)*sizeof(double));        
     s[0] = ss[0]/cTs; s[1] = ss[1]/cTs; s[2] = ss[2]/cTs;
     L[0] = LL[0]/cTs; L[1] = LL[1]/cTs; L[2] = LL[2]/cTs;
 
@@ -176,30 +199,30 @@ void computeRIR(double* imp, double c, double fs, double* rr, int nMicrophones, 
         // Generate room impulse response
         for (mx = -n1 ; mx <= n1 ; mx++)
         {
-            Rm[0] = 2*mx*L[0];
+            Rm[0] = 2 * mx * L[0];
 
             for (my = -n2 ; my <= n2 ; my++)
             {
-                Rm[1] = 2*my*L[1];
+                Rm[1] = 2 * my * L[1];
 
                 for (mz = -n3 ; mz <= n3 ; mz++)
                 {
-                    Rm[2] = 2*mz*L[2];
+                    Rm[2] = 2 * mz * L[2];
 
                     for (q = 0 ; q <= 1 ; q++)
                     {
-                        Rp_plus_Rm[0] = (1-2*q)*s[0] - r[0] + Rm[0];
+                        Rp_plus_Rm[0] = (1 - 2 * q) * s[0] - r[0] + Rm[0];
                         refl[0] = pow(beta[0], abs(mx-q)) * pow(beta[1], abs(mx));
 
                         for (j = 0 ; j <= 1 ; j++)
                         {
-                            Rp_plus_Rm[1] = (1-2*j)*s[1] - r[1] + Rm[1];
-                            refl[1] = pow(beta[2], abs(my-j)) * pow(beta[3], abs(my));
+                            Rp_plus_Rm[1] = (1 - 2 * j) * s[1] - r[1] + Rm[1];
+                            refl[1] = pow(beta[2], abs(my - j)) * pow(beta[3], abs(my));
 
                             for (k = 0 ; k <= 1 ; k++)
                             {
-                                Rp_plus_Rm[2] = (1-2*k)*s[2] - r[2] + Rm[2];
-                                refl[2] = pow(beta[4],abs(mz-k)) * pow(beta[5], abs(mz));
+                                Rp_plus_Rm[2] = (1 - 2 * k) * s[2] - r[2] + Rm[2];
+                                refl[2] = pow(beta[4],abs(mz - k)) * pow(beta[5], abs(mz));
 
                                 dist = sqrt(pow(Rp_plus_Rm[0], 2) + pow(Rp_plus_Rm[1], 2) + pow(Rp_plus_Rm[2], 2));
 
@@ -210,16 +233,28 @@ void computeRIR(double* imp, double c, double fs, double* rr, int nMicrophones, 
                                     {
                                         gain = sim_microphone(Rp_plus_Rm[0], Rp_plus_Rm[1], Rp_plus_Rm[2], microphone_angle, microphone_type)
                                             * refl[0]*refl[1]*refl[2]/(4*M_PI*dist*cTs);
-
+                                        angle = atan2(Rp_plus_Rm[1], Rp_plus_Rm[0]) * (double)180 / M_PI;  //atan 无方向,atan2 有方向 （矢量）
+                                        
+                                        index = angle_to_index[ROUND(angle / 15.0) * 15];
+                                        // printf("%d*%d*%d ", angle, ROUND(angle / 15.0) * 15, index);
+                                        //if()
                                         for (n = 0 ; n < Tw ; n++)
                                         {
                                             const double t = (n-0.5*Tw+1) - (dist-fdist);
                                             LPI[n] = 0.5 * (1.0 + cos(2.0*M_PI*t/Tw)) * 2.0*Fc * sinc(M_PI*2.0*Fc*t);                                            
                                         }
-                                        startPosition = (int) fdist-(Tw/2)+1;
-                                        for (n = 0 ; n < Tw; n++)
+
+                                        conv_(pad_rir[index],pad_rir_len,LPI,Tw,conv_out);
+                                        startPosition = (int) fdist-(Tw/2)+1 - (50);
+                                        for (n = 0 ; n < Tw + pad_rir_len - 1; n++)
                                             if (startPosition+n >= 0 && startPosition+n < nSamples)
-                                                imp[idxMicrophone + nMicrophones*(startPosition+n)] += gain * LPI[n];
+                                                imp[idxMicrophone + nMicrophones*(startPosition+n)] += gain * conv_out[n];
+
+
+                                      /*  startPosition = (int)fdist - (Tw / 2) + 1;
+                                        for (n = 0; n < Tw ; n++)
+                                            if (startPosition + n >= 0 && startPosition + n < nSamples)
+                                                imp[idxMicrophone + nMicrophones * (startPosition + n)] += gain * LPI[n];*/
                                     }
                                 }
                             }
@@ -243,6 +278,6 @@ void computeRIR(double* imp, double c, double fs, double* rr, int nMicrophones, 
             }
         }
     }
-
+    delete[] conv_out;
     delete[] LPI;
 }
