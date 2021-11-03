@@ -246,3 +246,8 @@ void computeRIR(double* imp, double c, double fs, double* rr, int nMicrophones, 
 
     delete[] LPI;
 }
+
+void py_computeRIR(double* imp, double c, double fs, double* rr, int nMicrophones, int nSamples, double* ss, double* LL, double* beta, char* microphone_type, int nOrder, double* microphone_angle, int isHighPassFilter){
+    computeRIR(imp, c, fs, rr, nMicrophones, nSamples, ss, LL, beta, microphone_type[0], nOrder, microphone_angle, isHighPassFilter);
+
+}
