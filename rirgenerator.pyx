@@ -1,8 +1,9 @@
+# distutils: language = c++
 import numpy as np
 cimport numpy as np
 
 cdef extern from "rir_generator_core.h":
-	void py_computeRIR(double* imp,double c,double fs,double* rr,int nMicrophones,int nSamples,double* ss,double* LL,double* beta,char* microphone_type, int nOrder, double* angle, int isHighPassFilter)
+	void py_computeRIR(double* imp,double c,double fs,double* rr,int nMicrophones,int nSamples,double* ss,double* LL,double* beta, int nOrder, double* angle, int isHighPassFilter)
 
 def rir_generator(c,samplingRate,micPositions,srcPosition,LL,**kwargs):
 
@@ -51,18 +52,19 @@ def rir_generator(c,samplingRate,micPositions,srcPosition,LL,**kwargs):
 		nsamples=int(reverberation_time * samplingRate)
 
 	"""Mic type: Default omnidirectional"""
-	m_type='omnidirectional'
+	mic_type='omnidirectional'
+	cdef char* mtype = 'o'
 	if 'mtype' in kwargs:
-		m_type=kwargs['mtype']
-	if m_type is 'bidirectional':
+		mic_type=kwargs['mtype']
+	if mic_type is 'bidirectional':
 		mtype = 'b'
-	if m_type is 'cardioid':
+	if mic_type is 'cardioid':
 		mtype = 'c'
-	if m_type is 'subcardioid':
+	if mic_type is 'subcardioid':
 		mtype = 's'
-	if m_type is 'hypercardioid':
+	if mic_type is 'hypercardioid':
 		mtype = 'h'
-	if m_type is 'omnidirectional':
+	if mic_type is 'omnidirectional':
 		mtype = 'o'		
 
 	"""Reflection order: Default -1"""
@@ -111,5 +113,5 @@ def rir_generator(c,samplingRate,micPositions,srcPosition,LL,**kwargs):
 	cdef np.ndarray[np.double_t, ndim=2] micPos = np.ascontiguousarray(np.transpose(micPositions).astype('double'), dtype=np.double)	
 	cdef np.ndarray[np.double_t, ndim=2] srcPos = np.ascontiguousarray(np.transpose(srcPosition).astype('double'), dtype=np.double)	
 
-	py_computeRIR(<double *>imp.data,c,samplingRate,<double *>micPos.data,numMics,nsamples,<double *>srcPos.data,<double *>roomDim.data,<double *>beta.data,mtype,order,<double *>angle.data,isHighPassFilter)
+	py_computeRIR(<double *>imp.data,c,samplingRate,<double *>micPos.data,numMics,nsamples,<double *>srcPos.data,<double *>roomDim.data,<double *>beta.data,order,<double *>angle.data,isHighPassFilter)
 	return np.transpose(imp)
