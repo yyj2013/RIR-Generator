@@ -2,3 +2,4 @@
 /build
 rirgenerator.c
 *.mexmaci64
+*.mat
