@@ -10,7 +10,7 @@ L = [5,4,6]				# Room dimensions [x y z] (m)
 beta = 0.4				# Reverberation time (s)
 n = 4096				# Number of samples
 
-h = RG.rir_generator(c, fs, r, s, L, beta=beta, nsample=n)
+h = RG.rir_generator(c, fs, r, s, L, beta, n)
 
 plt.plot(h[0,:])
 plt.show()

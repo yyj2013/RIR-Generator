@@ -15,7 +15,7 @@ dim = 3						# Room dimension
 orientation = [np.pi/2,0]		# Microphone orientation (rad)
 hp_filter = 0				# Disable high-pass filter
 
-h = RG.rir_generator(c, fs, r, s, L, beta=beta, nsample=n, mtype=mtype, order=order, dim=dim, orientation=orientation, hp_filter=hp_filter)
+h = RG.rir_generator(c, fs, r, s, L, beta, n, mtype=mtype, order=order, dim=dim, orientation=orientation, hp_filter=hp_filter)
 
 plt.plot(h[0,:])
 plt.show()
