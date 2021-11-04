@@ -5,7 +5,7 @@ cimport numpy as np
 cdef extern from "rir_generator_core.h":
 	void computeRIR(double* imp,double c,double fs,double* rr,int nMicrophones,int nSamples,double* ss,double* LL,double* beta,char microphone_type, int nOrder, double* angle, int isHighPassFilter)
 
-def rir_generator(c, samplingRate, micPositions, srcPosition, LL, betaIn, nsample=16000, **kwargs):
+def rir_generator(c, samplingRate, micPositions, srcPosition, LL, betaIn, **kwargs):
 	if type(LL) is not np.array:
 		LL=np.array(LL,ndmin=2)
 	if LL.shape[0]==1:
