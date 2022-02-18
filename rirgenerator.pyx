@@ -1,11 +1,13 @@
 # distutils: language = c++
 import numpy as np
 cimport numpy as np
+from libc.stdlib cimport malloc, free 
 
 cdef extern from "rir_generator_core.h":
-	void computeRIR(double* imp,double c,double fs,double* rr,int nMicrophones,int nSamples,double* ss,double* LL,double* beta,char microphone_type, int nOrder, double* angle, int isHighPassFilter)
+	void computeRIR(double* imp,double c,double fs,double* rr,int nMicrophones,int nSamples,double* ss,double* LL,double* beta,char microphone_type, int nOrder, double* angle, int isHighPassFilter, double *, double *, int, int)
 
-def rir_generator(c, samplingRate, micPositions, srcPosition, LL, betaIn, **kwargs):
+def rir_generator(c,samplingRate,micPositions,srcPosition,LL,**kwargs):
+
 	if type(LL) is not np.array:
 		LL=np.array(LL,ndmin=2)
 	if LL.shape[0]==1:
@@ -18,27 +20,31 @@ def rir_generator(c, samplingRate, micPositions, srcPosition, LL, betaIn, **kwar
 
 	"""Passing beta"""
 	cdef np.ndarray[np.double_t, ndim=2] beta = np.zeros([6,1], dtype=np.double)
-	if type(betaIn) is not np.array:
-		betaIn=np.transpose(np.array(betaIn,ndmin=2))
-	if (betaIn.shape[1])>1:
-		beta=betaIn
-		V=LL[0]*LL[1]*LL[2]
-		alpha = ((1-pow(beta[0],2))+(1-pow(beta[1],2)))*LL[0]*LL[2]+((1-pow(beta[2],2))+(1-pow(beta[3],2)))*LL[1]*LL[2]+((1-pow(beta[4],2))+(1-pow(beta[5],2)))*LL[0]*LL[1]
-		reverberation_time = 24*np.log(10.0)*V/(c*alpha)
-		if (reverberation_time < 0.128):
-			reverberation_time = 0.128
-	else:
-		reverberation_time=betaIn		
-		if (reverberation_time != 0) :
+	if 'beta' in kwargs:
+		betaIn=kwargs['beta']
+		if type(betaIn) is not np.array:
+			betaIn=np.transpose(np.array(betaIn,ndmin=2))
+		if (betaIn.shape[1])>1:
+			beta=betaIn
 			V=LL[0]*LL[1]*LL[2]
-			S = 2*(LL[0]*LL[2]+LL[1]*LL[2]+LL[0]*LL[1])
-			alfa = 24*V*np.log(10.0)/(c*S*reverberation_time)
-			if alfa>1:
-				raise ValueError("Error: The reflection coefficients cannot be calculated using the current room parameters, i.e. room size and reverberation time.\n Please specify the reflection coefficients or change the room parameters.")
-			beta=np.zeros([6,1])
-			beta+=np.sqrt(1-alfa)
+			alpha = ((1-pow(beta[0],2))+(1-pow(beta[1],2)))*LL[0]*LL[2]+((1-pow(beta[2],2))+(1-pow(beta[3],2)))*LL[1]*LL[2]+((1-pow(beta[4],2))+(1-pow(beta[5],2)))*LL[0]*LL[1]
+			reverberation_time = 24*np.log(10.0)*V/(c*alpha)
+			if (reverberation_time < 0.128):
+				reverberation_time = 0.128
 		else:
-			beta=np.zeros([6,1])
+			reverberation_time=betaIn		
+			if (reverberation_time != 0) :
+				V=LL[0]*LL[1]*LL[2]
+				S = 2*(LL[0]*LL[2]+LL[1]*LL[2]+LL[0]*LL[1])		
+				alfa = 24*V*np.log(10.0)/(c*S*reverberation_time)
+				if alfa>1:
+					raise ValueError("Error: The reflection coefficients cannot be calculated using the current room parameters, i.e. room size and reverberation time.\n Please specify the reflection coefficients or change the room parameters.")
+				beta=np.zeros([6,1])
+				beta+=np.sqrt(1-alfa)
+			else:
+				beta=np.zeros([6,1])
+	else:
+			raise ValueError("Error: Specify either RT60 (ex: beta=0.4) or reflection coefficients (beta=[0.3,0.2,0.5,0.1,0.1,0.1])")
 	
 	"""Number of samples: Default T60 * Fs"""
 	if 'nsample' in kwargs:
@@ -106,7 +112,30 @@ def rir_generator(c, samplingRate, micPositions, srcPosition, LL, betaIn, **kwar
 
 	cdef np.ndarray[np.double_t, ndim=2] roomDim = np.ascontiguousarray(LL.astype('double'), dtype=np.double)
 	cdef np.ndarray[np.double_t, ndim=2] micPos = np.ascontiguousarray(np.transpose(micPositions).astype('double'), dtype=np.double)	
-	cdef np.ndarray[np.double_t, ndim=2] srcPos = np.ascontiguousarray(np.transpose(srcPosition).astype('double'), dtype=np.double)	
+	cdef np.ndarray[np.double_t, ndim=2] srcPos = np.ascontiguousarray(np.transpose(srcPosition).astype('double'), dtype=np.double)
 
-	computeRIR(<double *>imp.data,c,samplingRate,<double *>micPos.data,numMics,nsamples,<double *>srcPos.data,<double *>roomDim.data,<double *>beta.data,mtype[0],order,<double *>angle.data,isHighPassFilter)
+	rir_direct = kwargs['rir_direct']
+	ang_direct = kwargs['ang_direct']
+	angle_num = ang_direct.shape[0]
+	r_d_length = rir_direct.shape[1]
+	cdef np.ndarray[np.double_t, ndim=2] rir_direct1 = np.ascontiguousarray(np.transpose(rir_direct).astype('double'), dtype=np.double)
+	cdef np.ndarray[np.double_t, ndim=2] ang_direct1 = np.ascontiguousarray(np.transpose(ang_direct).astype('double'), dtype=np.double)
+
+	#cdef np.ndarray[np.double_t, ndim=2] rir_direct1 = np.ascontiguousarray((rir_direct).astype('double'), dtype=np.double)
+	#cdef np.ndarray[np.double_t, ndim=2] ang_direct1 = np.ascontiguousarray((ang_direct).astype('double'), dtype=np.double)
+
+	# double ** rir_direct1 = <double**>malloc(sizeof(double*)*angle_num)
+	# for i in range(angle_num):
+	# 	rir_direct1[i, :] = <double*>malloc(sizeof(double)*r_d_length)
+	# for k in range(angle_num):
+	# 	for i in range(r_d_length):
+	# 		rir_direct1[k, i] = rir_direct[k, i]
+	# double** ang_direct1 = <int**>malloc(sizeof(int*)*angle_num)
+	# for i in range(angle_num):
+	# 	ang_direct1[i, :] = <int*>malloc(sizeof(int)*2)
+	# for k in range (angle_num):
+	# 	for i in range(2):
+	# 		ang_direct1[k, i] = ang_direct[k, i]
+	computeRIR(<double *>imp.data,c,samplingRate,<double *>micPos.data,numMics,nsamples,<double *>srcPos.data,<double *>roomDim.data, \
+		<double *>beta.data,mtype[0],order,<double *>angle.data,isHighPassFilter, <double *>rir_direct1.data, <double *>ang_direct1.data, angle_num, r_d_length)
 	return np.transpose(imp)

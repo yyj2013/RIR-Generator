@@ -68,7 +68,11 @@ SOFTWARE.
 #include <stdlib.h>
 #include "math.h"
 #include "rir_generator_core.h"
-#include "pad.h"
+#include <iostream>
+#include <fstream>
+#include <string>
+using namespace std;
+//#include "pad.h"
 
 #define ROUND(x) ((x)>=0?(long)((x)+0.5):(long)((x)-0.5))
 
@@ -146,9 +150,24 @@ void conv_(const double *input, int len_in,double *kernel,int len_k, double *out
         output[i] = res;
     }
 }
+void get_idx(double** ang_direct, double azi, double ele, int angle_num, int& angle_idx)
+{
+    int i = 0, j = 0;
+    double max_value = 360.0 * 360.0 * 2 + 1.0;
+    double dis = 0.0;
+ 
+    for (j = 0; j < angle_num; j++)
+    {
+        dis = pow(ang_direct[j][0] - azi, 2) + pow(ang_direct[j][1] - ele, 2);
+        if (max_value > dis)
+        {
+            angle_idx = j;
+            max_value = dis;
+        }
+    }
+}
 
-
-void computeRIR(double* imp, double c, double fs, double* rr, int nMicrophones, int nSamples, double* ss, double* LL, double* beta, char microphone_type, int nOrder, double* microphone_angle, int isHighPassFilter){
+void computeRIR(double* imp, double c, double fs, double* rr, int nMicrophones, int nSamples, double* ss, double* LL, double* beta, char microphone_type, int nOrder, double* microphone_angle, int isHighPassFilter, double * rir_direct, double * ang_direct, int angle_num, int r_d_length){
 
     // Temporary variables and constants (high-pass filter)
     const double W = 2*M_PI*100/fs; // The cut-off frequency equals 100 Hz
@@ -181,9 +200,46 @@ void computeRIR(double* imp, double c, double fs, double* rr, int nMicrophones, 
     int          n;
     int          angle;
     int          index;
-    double *conv_out  = new double[Tw+pad_rir_len-1];//NEW((Tw+pad_rir_len)*sizeof(double));        
+    int          angle_idx;
+    double       azi = 0;
+    double       ele = 0;
+    double *conv_out  = new double[Tw+r_d_length-1];//NEW((Tw+pad_rir_len)*sizeof(double));        
     s[0] = ss[0]/cTs; s[1] = ss[1]/cTs; s[2] = ss[2]/cTs;
     L[0] = LL[0]/cTs; L[1] = LL[1]/cTs; L[2] = LL[2]/cTs;
+
+    double ** rir_direct1 = new double* [angle_num];
+    for (int i = 0; i < angle_num; i++)
+    {
+        rir_direct1[i] = new double [r_d_length];
+    }
+
+    for (int k = 0; k < angle_num; k++)
+    {
+        for (int i = 0; i < r_d_length; i++)
+        {
+            rir_direct1[k][i] = rir_direct[k + i * angle_num];
+        }
+    }
+    // ofstream outfile("out.txt", ios::trunc);
+    // for (int i = 0; i < 25; i++)
+	// {
+	// 	outfile  << rir_direct1[0][i] << endl;
+	// }
+	// outfile.close();
+
+    double** ang_direct1 = new double* [angle_num];
+    for (int i = 0; i < angle_num; i++)
+    {
+        ang_direct1[i] = new double  [2];
+    }
+    for (int k = 0; k < angle_num; k++)
+    {
+        for (int i = 0; i < 2; i++)
+        {
+            ang_direct1[k][i] = ang_direct[k + i * angle_num];
+        }
+    }   
+
 
     for (int idxMicrophone = 0; idxMicrophone < nMicrophones ; idxMicrophone++)
     {
@@ -233,10 +289,12 @@ void computeRIR(double* imp, double c, double fs, double* rr, int nMicrophones, 
                                     {
                                         gain = sim_microphone(Rp_plus_Rm[0], Rp_plus_Rm[1], Rp_plus_Rm[2], microphone_angle, microphone_type)
                                             * refl[0]*refl[1]*refl[2]/(4*M_PI*dist*cTs);
-                                        angle = atan2(Rp_plus_Rm[1], Rp_plus_Rm[0]) * (double)180 / M_PI;  //atan ÎÞ·½Ïò,atan2 ÓÐ·½Ïò £¨Ê¸Á¿£©
+                                        azi = atan2(Rp_plus_Rm[1], Rp_plus_Rm[0]) * (double)180 / M_PI;  //atan æ— æ–¹å‘,atan2 æœ‰æ–¹å‘ ï¼ˆçŸ¢é‡ï¼‰
+                                        ele = atan2(Rp_plus_Rm[2], sqrt(pow(Rp_plus_Rm[0], 2) + pow(Rp_plus_Rm[1], 2))) * (double)180 / M_PI;  //atan æ— æ–¹å‘,atan2 æœ‰æ–¹å‘ ï¼ˆçŸ¢é‡ï¼‰
+                                        //index = angle_to_index[ROUND(angle / 15.0) * 15];
+                                        get_idx(ang_direct1, azi, ele, angle_num, angle_idx);
+                                        //printf("%f*%f*%f*%d*%d*%d%d ", Rp_plus_Rm[0], Rp_plus_Rm[1], Rp_plus_Rm[2], azi, ele, azi_idx, ele_idx);
                                         
-                                        index = angle_to_index[ROUND(angle / 15.0) * 15];
-                                        // printf("%d*%d*%d ", angle, ROUND(angle / 15.0) * 15, index);
                                         //if()
                                         for (n = 0 ; n < Tw ; n++)
                                         {
@@ -244,9 +302,9 @@ void computeRIR(double* imp, double c, double fs, double* rr, int nMicrophones, 
                                             LPI[n] = 0.5 * (1.0 + cos(2.0*M_PI*t/Tw)) * 2.0*Fc * sinc(M_PI*2.0*Fc*t);                                            
                                         }
 
-                                        conv_(pad_rir[index],pad_rir_len,LPI,Tw,conv_out);
+                                        conv_(rir_direct1[angle_idx],r_d_length,LPI,Tw,conv_out);
                                         startPosition = (int) fdist-(Tw/2)+1 - (50);
-                                        for (n = 0 ; n < Tw + pad_rir_len - 1; n++)
+                                        for (n = 0 ; n < Tw + r_d_length - 1; n++)
                                             if (startPosition+n >= 0 && startPosition+n < nSamples)
                                                 imp[idxMicrophone + nMicrophones*(startPosition+n)] += gain * conv_out[n];
 
@@ -278,6 +336,7 @@ void computeRIR(double* imp, double c, double fs, double* rr, int nMicrophones, 
             }
         }
     }
-    delete[] conv_out;
+
     delete[] LPI;
+    delete[] conv_out;
 }

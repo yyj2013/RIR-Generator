@@ -9,6 +9,7 @@ ext_modules = [Extension("rirgenerator", sourcefiles,libraries=['m'],language="c
     extra_link_args=["-std=c++11"])]
 
 setup(
+        version = '1.0',
 	name = 'RIRGenerator',
 	cmdclass = {'build_ext': build_ext},
 	ext_modules = ext_modules,
